@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/globalstyles.ts","./src/main.tsx","./src/vite-env.d.ts","./src/components/deletebutton.tsx","./src/components/table.tsx","./src/components/tablerow.tsx","./src/hooks/usestores.ts","./src/stores/addressstore.ts","./src/stores/metersstore.ts","./src/utils/apiadresses.ts","./src/utils/apimeters.ts"],"errors":true,"version":"5.6.2"}
