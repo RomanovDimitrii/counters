@@ -4,7 +4,7 @@ import './vendor/normalize.css';
 export const GlobalStyle = createGlobalStyle`
   @font-face {
     font-family: 'Roboto';
-   
+    font-weight: 400;
     src: url('./fonts/Roboto-Regular.woff2') format('woff2'),
          url('./fonts/Roboto-Regular.woff') format('woff');
   }

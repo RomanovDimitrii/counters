@@ -14,6 +14,9 @@ const Table: React.FC = observer(() => {
   const thumbRef = useRef<HTMLDivElement>(null);
   const theadRef = useRef<HTMLTableSectionElement>(null);
   const [theadHeight, setTheadHeight] = useState(60);
+  const [isDragging, setIsDragging] = useState(false);
+  const [initialY, setInitialY] = useState(0);
+  const [initialScrollTop, setInitialScrollTop] = useState(0);
 
   useLayoutEffect(() => {
     if (theadRef.current) {
@@ -36,8 +39,6 @@ const Table: React.FC = observer(() => {
 
         thumbRef.current.style.transform = `translateY(${thumbTop}px)`;
       }
-    } else {
-      console.log('scrollContainerRef or thumbRef is null');
     }
   };
 
@@ -47,8 +48,6 @@ const Table: React.FC = observer(() => {
     if (scrollContainer) {
       scrollContainer.addEventListener('scroll', updateThumbPosition);
       updateThumbPosition();
-    } else {
-      console.log('scrollContainerRef is not set');
     }
 
     return () => {
@@ -65,11 +64,85 @@ const Table: React.FC = observer(() => {
 
     window.addEventListener('resize', handleResize);
 
-    // Удаляем обработчик при размонтировании
     return () => {
       window.removeEventListener('resize', handleResize);
     };
   }, []);
+
+  useEffect(() => {
+    const limit = metersPerPage;
+    const offset = metersPerPage * (currentPage - 1);
+    metersStore.fetchMeters(limit, offset);
+  }, [currentPage, metersPerPage]);
+
+  useEffect(() => {
+    if (metersStore.meters.length === 0 && currentPage > 1) {
+      setCurrentPage((prevPage) => prevPage - 1);
+    }
+  }, [metersStore.meters, currentPage]);
+
+  const handleThumbMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setInitialY(e.clientY);
+    if (scrollContainerRef.current) {
+      setInitialScrollTop(scrollContainerRef.current.scrollTop);
+    }
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (isDragging && scrollContainerRef.current) {
+      const deltaY = e.clientY - initialY;
+      const { scrollHeight, clientHeight } = scrollContainerRef.current;
+      const maxScrollTop = scrollHeight - clientHeight;
+      const maxThumbTop = clientHeight - 200;
+
+      const newScrollTop =
+        initialScrollTop + (deltaY / maxThumbTop) * maxScrollTop;
+
+      scrollContainerRef.current.scrollTop = Math.max(
+        0,
+        Math.min(maxScrollTop, newScrollTop)
+      );
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleScrollbarClick = (e: React.MouseEvent) => {
+    if (scrollContainerRef.current && thumbRef.current) {
+      const scrollbarRect = (
+        e.target as HTMLDivElement
+      ).getBoundingClientRect();
+      const clickY = e.clientY - scrollbarRect.top;
+
+      const { scrollHeight, clientHeight } = scrollContainerRef.current;
+      const maxScrollTop = scrollHeight - clientHeight;
+      const maxThumbTop = clientHeight - 200;
+
+      const newScrollTop = (clickY / maxThumbTop) * maxScrollTop;
+
+      scrollContainerRef.current.scrollTop = Math.max(
+        0,
+        Math.min(maxScrollTop, newScrollTop)
+      );
+    }
+  };
+
+  const handleDeleteMeter = async (meterId: number) => {
+    await metersStore.deleteMeter(meterId);
+
+    const remainingMeters = metersStore.meters.length;
+
+    if (remainingMeters < 1) {
+      handlePreviousPage();
+    }
+  };
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
@@ -135,18 +208,23 @@ const Table: React.FC = observer(() => {
             <StyledTh>Текущие показания</StyledTh>
             <StyledTh>Адрес</StyledTh>
             <StyledTh>Примечание</StyledTh>
-            <StyledTh></StyledTh>
+            <StyledTh>Действия</StyledTh>
           </tr>
         </StyledThead>
 
         <StyledTbody>
           {metersStore.meters.map((meter, index) => (
-            <TableRow key={meter.id} meter={meter} index={index + 1} />
+            <TableRow
+              key={meter.id}
+              meter={meter}
+              index={(currentPage - 1) * metersPerPage + index + 1}
+              onDelete={() => handleDeleteMeter(meter.id)}
+            />
           ))}
         </StyledTbody>
       </StyledTable>
-      <CustomScrollbar top={theadHeight}>
-        <Thumb ref={thumbRef} />
+      <CustomScrollbar $top={theadHeight} onClick={handleScrollbarClick}>
+        <Thumb ref={thumbRef} onMouseDown={handleThumbMouseDown} />
       </CustomScrollbar>
 
       <Pagination>
@@ -191,14 +269,12 @@ const StyledWrapper = styled.div`
   }
 `;
 
-const CustomScrollbar = styled.div<{ top: number }>`
+const CustomScrollbar = styled.div<{ $top: number }>`
   position: absolute;
-  top: ${(props) => `${props.top}px`};
+  top: ${(props) => `${props.$top}px`};
   right: 2px;
   width: 6px;
-  height: calc(
-    100% - ${(props) => props.top}px
-  ); /* Скроллбар на высоту всего контейнера, кроме высоты thead */
+  height: calc(100% - ${(props) => props.top}px);
   background-color: rgba(0, 0, 0, 0);
   border-radius: 3px;
 
@@ -209,9 +285,11 @@ const Thumb = styled.div`
   position: absolute;
   top: 0;
   width: 100%;
-  height: 300px; /* Высота ползунка */
+  height: 300px;
   background-color: rgba(94, 102, 116, 0.5);
   border-radius: 4px;
+
+  cursor: pointer;
 `;
 
 const StyledTable = styled.table`
@@ -226,7 +304,7 @@ const StyledThead = styled.thead`
 `;
 
 const StyledTh = styled.th`
-  padding: 8.5px 15px;
+  padding: 8.5px 20px 8.5px 10px;
   margin: 0;
   color: rgba(105, 113, 128, 1);
   white-space: nowrap;
@@ -234,7 +312,7 @@ const StyledTh = styled.th`
   font-weight: 500;
 
   &:nth-child(1) {
-    padding: 5px 50px 5px 15px;
+    padding: 8.5px 20px 8.5px 15px;
   }
 
   &:nth-child(6) {
@@ -285,4 +363,5 @@ const Pagination = styled.div`
     padding: 8px 12px;
   }
 `;
+
 export default Table;
